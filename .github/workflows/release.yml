@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: expander-mcp-linux-x86_64
+            archive: tar
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            asset: expander-mcp-linux-aarch64
+            archive: tar
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: expander-mcp-macos-x86_64
+            archive: tar
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            asset: expander-mcp-macos-aarch64
+            archive: tar
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: expander-mcp-windows-x86_64
+            archive: zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install Linux ARM64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Build
+        shell: bash
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package Unix binary
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: |
+          cp "target/${{ matrix.target }}/release/expander-mcp" expander-mcp
+          tar -czf "${{ matrix.asset }}.tar.gz" expander-mcp
+      - name: Package Windows binary
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Copy-Item "target/${{ matrix.target }}/release/expander-mcp.exe" "expander-mcp.exe"
+          Compress-Archive -Path "expander-mcp.exe" -DestinationPath "${{ matrix.asset }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}.*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*
