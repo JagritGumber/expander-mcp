@@ -25,7 +25,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/JagritGumber/expander-mcp/main/install.ps1 | iex
 ```
 
-The installer downloads the matching release binary and runs `expander-mcp setup`. Setup detects Codex and Claude Code, registers the MCP server, and installs their `xp` adapters. Restart any agent sessions that were already open.
+The installer downloads a checksum-verified native binary and runs `expander-mcp setup`. Setup detects supported harnesses, registers the MCP server through their native interface, installs the portable `xp` skill, and inspects the resulting registrations. Restart agent sessions that were already open.
 
 You can rerun setup at any time:
 
@@ -33,17 +33,42 @@ You can rerun setup at any time:
 expander-mcp setup
 ```
 
+Target a particular harness, preview every action without writing, or consume structured results:
+
+```sh
+expander-mcp setup --client pi
+expander-mcp setup --dry-run
+expander-mcp setup --dry-run --json
+```
+
+Built-in adapters cover Codex, Claude Code, Pi, Gemini CLI, OpenCode, and Cursor. An explicitly requested missing or unverifiable client is an error instead of a silent skip. Other CLIs that follow the common `mcp add/list/remove` shape can be targeted by executable name:
+
+```sh
+expander-mcp setup --client my-agent
+```
+
+MCP standardizes how the agent and server communicate; each harness still owns its installation command. When a harness uses a different CLI shape, use its equivalent of `mcp add expander -- expander-mcp serve` or add the generic stdio configuration shown below.
+
+## Install the `xp` skill into other harnesses
+
+Expander is also a standard Agent Skill, so [skills.sh](https://skills.sh) can install the interaction layer into its supported coding agents:
+
+```sh
+npx skills add JagritGumber/expander-mcp --skill xp --global
+```
+
+This interactively detects and selects installed harnesses. MCP and Agent Skills solve different layers: the skill teaches the agent what `xp` means, while the MCP registration provides the four local tools.
+
 ## Use
 
-| Intent | Claude Code | Codex |
+| Intent | Skill-aware harness | Codex |
 |---|---|---|
-| Save | `/xp set review-prompt <prompt>` | `/prompts:xp set review-prompt <prompt>` |
-| Run | `/xp review-prompt` | `/prompts:xp review-prompt` |
-| Modern Codex skill | — | `$xp review-prompt` |
-| List | `/xp list` | `/prompts:xp list` |
-| Delete | `/xp delete review-prompt` | `/prompts:xp delete review-prompt` |
+| Save | `/xp set review-prompt <prompt>` | `$xp set review-prompt <prompt>` |
+| Run | `/xp review-prompt` | `$xp review-prompt` |
+| List | `/xp list` | `$xp list` |
+| Delete | `/xp delete review-prompt` | `$xp delete review-prompt` |
 
-Codex reserves its slash-command namespace and currently exposes local custom commands as `/prompts:<name>`. Expander also installs the modern `$xp` skill. Claude Code supports the exact `/xp` spelling.
+Invocation syntax is owned by each harness, not MCP. Codex uses the modern `$xp` skill syntax and retains `/prompts:xp` as a compatibility adapter; Claude Code exposes the skill as `/xp`.
 
 ### Arguments and templates
 
@@ -92,6 +117,9 @@ The server also implements MCP `prompts/list` and `prompts/get`, so clients with
 ```sh
 codex mcp add expander -- expander-mcp serve
 claude mcp add --scope user expander -- expander-mcp serve
+pi mcp add expander -- expander-mcp serve
+gemini mcp add --scope user expander expander-mcp serve
+opencode mcp add expander --global -- expander-mcp serve
 ```
 
 Generic stdio configuration:
@@ -126,4 +154,3 @@ Requires Rust 1.85 or newer. The server uses newline-delimited JSON-RPC over std
 ## License
 
 MIT
-

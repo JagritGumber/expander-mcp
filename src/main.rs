@@ -26,7 +26,7 @@ fn run() -> Result<(), String> {
 
     match command.as_str() {
         "serve" => mcp::serve(PromptStore::from_environment()?),
-        "setup" => setup::run(rest.iter().any(|arg| arg == "--force")),
+        "setup" => setup::run(&rest),
         "set" => cli_set(&rest),
         "get" | "expand" => cli_get(&rest),
         "list" | "ls" => cli_list(),
@@ -112,7 +112,7 @@ fn print_help() {
         "expander-mcp {version}\n\
          Fast, local-first saved prompts for MCP agents.\n\n\
          Usage:\n\
-           expander-mcp setup [--force]       Configure detected agent clients\n\
+           expander-mcp setup [options]       Detect, configure, and verify agent clients\n\
            expander-mcp set <name> <prompt>   Save or replace a prompt\n\
            expander-mcp get <name> [args]     Print an expanded prompt\n\
            expander-mcp list                  List saved prompts\n\
@@ -121,7 +121,12 @@ fn print_help() {
            expander-mcp serve                 Run the stdio MCP server\n\n\
          Agent shortcuts:\n\
            /xp set review-prompt Review this change for regressions.\n\
-           /xp review-prompt",
+           /xp review-prompt\n\n\
+         Setup options:\n\
+           --client <name>  Target a specific harness (repeatable)\n\
+           --dry-run        Print a zero-write installation plan\n\
+           --json           Emit machine-readable setup results\n\
+           --force          Replace conflicting managed entries",
         version = env!("CARGO_PKG_VERSION")
     );
 }
