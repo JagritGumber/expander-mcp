@@ -1,5 +1,7 @@
 # Expander MCP
 
+![Expander: save a prompt once and run it in any MCP agent with /xp](docs/assets/social-preview.png)
+
 Save a long prompt once. Run it in any MCP-capable agent with a tiny command.
 
 ```text
