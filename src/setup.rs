@@ -8,12 +8,28 @@ use std::process::{Command, Output};
 const XP_SKILL: &str = include_str!("../skills/xp/SKILL.md");
 
 const CODEX_PROMPT: &str = r#"---
+description: Save, show, edit, or run a named prompt from Expander MCP
+argument-hint: set <name> <prompt> | <name> [arguments] | show <name> | edit <name> <change> | list | delete <name>
+---
+
+Use the `xp` skill to interpret and execute this command: `$ARGUMENTS`
+"#;
+
+// Adapters shipped by 0.2.0. Setup replaces these silently; any other content is user-owned.
+const CODEX_PROMPT_0_2: &str = r#"---
 description: Save or run a named prompt from Expander MCP
 argument-hint: set <name> <prompt> | <name> [arguments] | list | delete <name>
 ---
 
 Use the `xp` skill to interpret and execute this command: `$ARGUMENTS`
 "#;
+
+const XP_SKILL_0_2: &str = include_str!("legacy/xp-skill-0.2.0.md");
+
+// Every adapter text an earlier release installed. Setup replaces these silently and
+// refuses to touch anything else, so a missing entry turns an upgrade into a conflict.
+const XP_SKILL_PREVIOUS: &[&str] = &[LEGACY_CODEX_SKILL, XP_SKILL_0_2];
+const CODEX_PROMPT_PREVIOUS: &[&str] = &[LEGACY_CODEX_PROMPT, CODEX_PROMPT_0_2];
 
 const LEGACY_CODEX_PROMPT: &str = r#"---
 description: Save or run a named prompt from Expander MCP
@@ -392,7 +408,7 @@ fn install_skill_adapters(
             "xp-skill",
             &path,
             XP_SKILL,
-            &[LEGACY_CODEX_SKILL],
+            XP_SKILL_PREVIOUS,
             options,
         )?);
     }
@@ -400,7 +416,7 @@ fn install_skill_adapters(
         "codex-xp-command",
         &home.join(".codex/prompts/xp.md"),
         CODEX_PROMPT,
-        &[LEGACY_CODEX_PROMPT],
+        CODEX_PROMPT_PREVIOUS,
         options,
     )?);
 
@@ -603,6 +619,42 @@ fn home_directory() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upgrades_adapters_installed_by_earlier_releases_but_not_user_edits() {
+        let dir = env::temp_dir().join(format!("expander-mcp-skill-test-{}", std::process::id()));
+        let options = SetupOptions {
+            force: false,
+            dry_run: false,
+            json: false,
+            clients: Vec::new(),
+        };
+        fs::create_dir_all(&dir).unwrap();
+
+        let adapters = [
+            ("SKILL.md", XP_SKILL, XP_SKILL_PREVIOUS, XP_SKILL_0_2),
+            (
+                "xp.md",
+                CODEX_PROMPT,
+                CODEX_PROMPT_PREVIOUS,
+                CODEX_PROMPT_0_2,
+            ),
+        ];
+        for (file, current, previous, shipped_in_0_2) in adapters {
+            let path = dir.join(file);
+            for old in previous.iter().chain([&shipped_in_0_2]) {
+                fs::write(&path, old).unwrap();
+                let result = install_file("adapter", &path, current, previous, &options).unwrap();
+                assert_eq!(result.status, "replaced", "{file}");
+                assert_eq!(fs::read_to_string(&path).unwrap(), current);
+            }
+
+            fs::write(&path, "my own notes").unwrap();
+            let result = install_file("adapter", &path, current, previous, &options).unwrap();
+            assert_eq!(result.status, "failed", "{file}");
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn accepts_repeatable_and_generic_client_targets() {

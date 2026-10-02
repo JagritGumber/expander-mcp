@@ -54,16 +54,41 @@ impl PromptStore {
         &self.root
     }
 
+    /// Saves `content`, keeping the version it replaces as `.<name>.md.bak`.
     pub fn set(&self, name: &str, content: &str) -> Result<(), String> {
+        self.set_checked(name, content, None)
+    }
+
+    /// Like [`set`](Self::set), but when `expected_version` is given the save is refused
+    /// if the prompt no longer matches that [`version`], so an edit made from an earlier
+    /// read cannot silently overwrite a newer change.
+    pub fn set_checked(
+        &self,
+        name: &str,
+        content: &str,
+        expected_version: Option<&str>,
+    ) -> Result<(), String> {
         validate_name(name)?;
         if content.trim().is_empty() {
             return Err("prompt content cannot be empty".into());
+        }
+        if let Some(expected) = expected_version {
+            if version(&self.get(name)?) != expected {
+                return Err(format!(
+                    "prompt '{name}' changed since it was read; read it again and reapply the change"
+                ));
+            }
         }
 
         fs::create_dir_all(&self.root)
             .map_err(|error| format!("could not create {}: {error}", self.root.display()))?;
 
         let destination = self.path_for(name);
+        if !destination.is_symlink() && destination.is_file() {
+            let backup = self.root.join(format!(".{name}.md.bak"));
+            fs::copy(&destination, &backup)
+                .map_err(|error| format!("could not back up {}: {error}", destination.display()))?;
+        }
         let temporary = self
             .root
             .join(format!(".{name}.{}.tmp", std::process::id()));
@@ -167,6 +192,16 @@ impl PromptStore {
     }
 }
 
+/// A short fingerprint of a prompt's text (64-bit FNV-1a), stable across builds.
+pub fn version(content: &str) -> String {
+    let hash = content
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        });
+    format!("{hash:016x}")
+}
+
 fn validate_name(name: &str) -> Result<(), String> {
     let mut characters = name.chars();
     let Some(first) = characters.next() else {
@@ -225,6 +260,28 @@ mod tests {
         assert_eq!(store.list().unwrap()[0].name, "review-prompt");
         store.set("review-prompt", "Review it again.").unwrap();
         assert_eq!(store.get("review-prompt").unwrap(), "Review it again.");
+        fs::remove_dir_all(store.root()).unwrap();
+    }
+
+    #[test]
+    fn keeps_the_previous_version_and_refuses_stale_edits() {
+        let store = temporary_store();
+        store.set("review", "First.").unwrap();
+        let read = version(&store.get("review").unwrap());
+        store.set("review", "Second.").unwrap();
+        assert_eq!(
+            fs::read_to_string(store.root().join(".review.md.bak")).unwrap(),
+            "First."
+        );
+        assert_eq!(store.list().unwrap().len(), 1);
+
+        assert!(store.set_checked("review", "Edited.", Some(&read)).is_err());
+        assert_eq!(store.get("review").unwrap(), "Second.");
+        let current = version("Second.");
+        store
+            .set_checked("review", "Edited.", Some(&current))
+            .unwrap();
+        assert_eq!(store.get("review").unwrap(), "Edited.");
         fs::remove_dir_all(store.root()).unwrap();
     }
 

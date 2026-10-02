@@ -65,6 +65,8 @@ This interactively detects and selects installed harnesses. MCP and Agent Skills
 |---|---|---|
 | Save | `/xp set review-prompt <prompt>` | `$xp set review-prompt <prompt>` |
 | Run | `/xp review-prompt` | `$xp review-prompt` |
+| Show blanks | `/xp show review-prompt` | `$xp show review-prompt` |
+| Edit | `/xp edit review-prompt <change>` | `$xp edit review-prompt <change>` |
 | List | `/xp list` | `$xp list` |
 | Delete | `/xp delete review-prompt` | `$xp delete review-prompt` |
 
@@ -76,12 +78,21 @@ Saved prompts can use these placeholders:
 
 - `$ARGUMENTS` or `{{args}}` — all invocation arguments
 - `$1` through `$9` — whitespace-separated positional arguments
-- `{{NAME}}` — a `NAME=value` argument
+- `{{NAME}}` — a required blank, filled by a `NAME=value` argument
+- `{{NAME?}}` — an optional blank
+- `{{NAME=default}}` — a blank with a default, used everywhere `NAME` appears
+
+Blank names are UPPER_SNAKE_CASE. Add `: hint` to any blank to say what belongs there. Defaults are literal text and cannot contain `:`, and `NAME=value` values cannot contain spaces. Other double-brace text, such as `{{ title }}`, `{{color: "red"}}`, or a lowercase `{{name}}`, is left as written, so code and template examples in your prompts are safe.
 
 ```text
-/xp set focused-review Review $1 with emphasis on {{FOCUS}}.
-/xp focused-review src/auth.rs FOCUS=security
+/xp set focused-review Review {{FILE: the file or diff to review}} with emphasis on {{FOCUS=security}}. {{NOTES?}}
+/xp focused-review FILE=src/auth.rs FOCUS=performance
+/xp focused-review
 ```
+
+You can leave blanks empty. `expand_prompt` lists them under `unresolved` and keeps them in the text as written. The agent fills each required blank from the conversation, such as the file you just edited or the current diff. It says which value it used in one line, then carries on. It asks only when the context doesn't make the value clear. It fills optional blanks only when the answer is obvious.
+
+`/xp show <name>` prints a prompt's template, its blanks, and the positional forms it accepts. `/xp edit <name> <change>` rewrites a saved prompt in place, keeping the blanks the change doesn't mention. An edit is refused if the prompt changed after the agent read it, and every save keeps the text it replaced as `.<name>.md.bak` in the prompt directory.
 
 ## Terminal CLI
 
@@ -91,6 +102,7 @@ The same library is available without an agent:
 expander-mcp set review-prompt "Review this change carefully."
 expander-mcp list
 expander-mcp get review-prompt
+expander-mcp show review-prompt
 expander-mcp delete review-prompt
 expander-mcp path
 ```
@@ -105,12 +117,13 @@ Prompts live in `$XDG_DATA_HOME/expander-mcp/prompts` or `~/.local/share/expande
 
 ## MCP tools
 
-- `set_prompt(name, prompt)`
-- `expand_prompt(name, arguments?)`
+- `set_prompt(name, prompt, expected_version?)` — the save fails if `expected_version` no longer matches
+- `expand_prompt(name, arguments?)` — returns the expanded `prompt` and any `unresolved` blanks
+- `get_prompt(name)` — returns the raw template, its `placeholders`, its `positional` forms, and its `version`
 - `list_prompts()`
 - `delete_prompt(name)`
 
-The server also implements MCP `prompts/list` and `prompts/get`, so clients with native prompt browsing can discover saved prompts directly.
+The server also implements MCP `prompts/list` and `prompts/get`, so clients with native prompt browsing can discover saved prompts directly. Each named blank appears as its own prompt argument, after the positional `arguments` entry when the prompt uses `$1`-style forms. None is marked required, so a field you leave empty is passed to the agent to fill in, and a value written as `NAME=value` goes to that blank whichever field it is in.
 
 ### Manual client configuration
 

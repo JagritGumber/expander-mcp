@@ -29,6 +29,7 @@ fn run() -> Result<(), String> {
         "setup" => setup::run(&rest),
         "set" => cli_set(&rest),
         "get" | "expand" => cli_get(&rest),
+        "show" => cli_show(&rest),
         "list" | "ls" => cli_list(),
         "delete" | "remove" | "rm" => cli_delete(&rest),
         "path" => {
@@ -79,10 +80,75 @@ fn cli_get(args: &[String]) -> Result<(), String> {
     };
     let prompt = PromptStore::from_environment()?.get(name)?;
     let arguments = args.get(1..).unwrap_or_default().join(" ");
-    let expanded = template::expand(&prompt, &arguments);
-    print!("{expanded}");
-    if !expanded.ends_with('\n') {
+    let expansion = template::expand(&prompt, &arguments);
+    print!("{}", expansion.text);
+    if !expansion.text.ends_with('\n') {
         println!();
+    }
+    if !expansion.unresolved.is_empty() {
+        let blanks: Vec<String> = expansion
+            .unresolved
+            .iter()
+            .map(|blank| {
+                let kind = if blank.required {
+                    "required"
+                } else {
+                    "optional"
+                };
+                format!("{} ({kind})", blank.name)
+            })
+            .collect();
+        eprintln!("unfilled: {} (pass NAME=value to fill)", blanks.join(", "));
+    }
+    Ok(())
+}
+
+fn cli_show(args: &[String]) -> Result<(), String> {
+    let Some(name) = args.first() else {
+        return Err("usage: expander-mcp show <name>".into());
+    };
+    let prompt = PromptStore::from_environment()?.get(name)?;
+    print!("{prompt}");
+    if !prompt.ends_with('\n') {
+        println!();
+    }
+
+    let blanks = template::placeholders(&prompt);
+    let positional = template::positional(&prompt);
+    if blanks.is_empty() && positional.is_empty() {
+        println!("\nNo blanks.");
+        return Ok(());
+    }
+    if !blanks.is_empty() {
+        println!("\nBlanks:");
+        let rows: Vec<(&str, String, &str)> = blanks
+            .iter()
+            .map(|blank| {
+                let kind = match (&blank.default, blank.required) {
+                    (Some(default), _) => format!("default: {default}"),
+                    (None, true) => "required".to_string(),
+                    (None, false) => "optional".to_string(),
+                };
+                (
+                    blank.name.as_str(),
+                    kind,
+                    blank.hint.as_deref().unwrap_or_default(),
+                )
+            })
+            .collect();
+        let name_width = rows.iter().map(|row| row.0.len()).max().unwrap_or(0);
+        let kind_width = rows
+            .iter()
+            .map(|row| row.1.chars().count())
+            .max()
+            .unwrap_or(0);
+        for (name, kind, hint) in rows {
+            let line = format!("  {name:<name_width$}  {kind:<kind_width$}  {hint}");
+            println!("{}", line.trim_end());
+        }
+    }
+    if !positional.is_empty() {
+        println!("\nPositional: {}", positional.join(", "));
     }
     Ok(())
 }
@@ -115,13 +181,15 @@ fn print_help() {
            expander-mcp setup [options]       Detect, configure, and verify agent clients\n\
            expander-mcp set <name> <prompt>   Save or replace a prompt\n\
            expander-mcp get <name> [args]     Print an expanded prompt\n\
+           expander-mcp show <name>           Print a prompt's template and its blanks\n\
            expander-mcp list                  List saved prompts\n\
            expander-mcp delete <name>         Delete a prompt\n\
            expander-mcp path                  Print the prompt directory\n\
            expander-mcp serve                 Run the stdio MCP server\n\n\
          Agent shortcuts:\n\
            /xp set review-prompt Review this change for regressions.\n\
-           /xp review-prompt\n\n\
+           /xp review-prompt\n\
+           /xp show review-prompt\n\n\
          Setup options:\n\
            --client <name>  Target a specific harness (repeatable)\n\
            --dry-run        Print a zero-write installation plan\n\
